@@ -10,14 +10,24 @@ from [dbo].[sales]
 group by [customer_id];
 
 -- 3. What was the first item from the menu purchased by each customer?
-select s.customer_id, s.order_date, s.product_id, m.product_name
-from [dbo].[sales] as s
-join [dbo].[menu] as m on s.product_id = m.product_id
-where (s.customer_id, s.order_date) in (
-	select customer_id, MIN(order_date)
-	from [dbo].[sales] as s
-	group by s.customer_id 
-);
+-- for first purchased not in menu
+SELECT customer_id,MIN(product_name) as first_purchased, MIN(order_date) as time_to_buy
+FROM sales s
+JOIN menu m ON s.product_id = m.product_id
+GROUP BY customer_id;
+
+SELECT customer_id, m.product_name, order_date
+FROM(
+	SELECT s.customer_id, s.order_date, s.product_id,
+	ROW_NUMBER() OVER(
+		PARTITION BY s.customer_id
+		ORDER BY s.order_date
+	) as rn
+	FROM sales as s
+) as r
+join menu as m on r.product_id = m.product_id
+where rn = 1;
+
 
 -- 4. What is the most purchased item on the menu and how many times was it purchased by all customers?
 select top 1 m.product_name, COUNT(s.product_id) as most_purchased_item
@@ -25,3 +35,9 @@ from [dbo].[sales] as s
 join [dbo].[menu] as m on s.product_id = m.product_id
 group by m.product_name
 order by most_purchased_item DESC
+
+-- 5. Which item was the most popular for each customer?
+select s.customer_id, COUNT(*) as purchase_count
+from [dbo].[sales] as s
+join [dbo].[menu] as m on s.product_id = m.product_id
+group by s.customer_id;
