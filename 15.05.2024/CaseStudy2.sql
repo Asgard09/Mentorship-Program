@@ -8,4 +8,8 @@ select [customer_id] , COUNT(DISTINCT [order_id]) as number_of_orders
 from [dbo].[customer_orders]
 group by [customer_id]
 
--- 3. How many successful orders were delivered by each runner?
+-- 3. How many successful orders were delivered by each runner? --> distance != null
+select runner_id, COUNT(order_id) AS successful_orders
+from runner_orders
+where TRY_CAST(REPLACE(distance, 'km', '') AS float) is not null
+GROUP BY runner_id;
