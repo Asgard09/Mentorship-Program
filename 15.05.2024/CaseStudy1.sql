@@ -145,3 +145,34 @@ select customer_id, SUM(total_points) as total_points
 from first_week_program
 group by customer_id
 
+-- how many customer buy sushi ? --> COUNT(IF product_name = "shushi" then )
+with new_price_cte as (
+	select s.customer_id, m.price, m.product_name,
+	case
+		when m.product_name = 'sushi' then 1
+		else 0
+	end as new_price
+	from [dbo].[sales] as s 
+	join [dbo].[menu] as m on s.product_id = m.product_id
+)
+
+select count(DISTINCT customer_id) as customer_buy_sushi
+from new_price_cte
+where new_price = 1
+
+-- how many time customer buy sushi ? --> COUNT(IF product_name = "shushi" then 1 else 0) --> COUNT(IF...) = SUM(IF...)
+with new_price_cte as (
+	select s.customer_id, m.price, m.product_name,
+	case
+		when m.product_name = 'sushi' then 1
+		else 0
+	end as new_price
+	from [dbo].[sales] as s 
+	join [dbo].[menu] as m on s.product_id = m.product_id
+)
+
+select customer_id , SUM(new_price) as times_customer_buy_sushi
+from new_price_cte
+group by(customer_id)
+
+
