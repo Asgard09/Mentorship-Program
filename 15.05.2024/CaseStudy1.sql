@@ -110,38 +110,38 @@ from total_items_amount_before_member
 -- 9. If each $1 spent equates to 10 points and sushi has a 2x points multiplier — how many points would each customer have?
 with total_points_of_each_customer as (
 	select [customer_id], 
-		sum(
-			case 
-				when menu.product_id = 1 then menu.price*20
-				else menu.price*10
-			end 
-		)as total_points
+		case 
+			when menu.product_id = 1 then menu.price*20
+			else menu.price*10
+		end as total_points
 	from sales 
 	join menu on sales.product_id = menu.product_id
-	group by customer_id
+	
 )
 
-select customer_id, total_points
+select customer_id, SUM(total_points) as total_points
 from total_points_of_each_customer
+group by customer_id
 
 -- 10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi 
 -- how many points do customer A and B have at the end of January?
 with first_week_program as (
 	select sales.customer_id, 
-		sum(
-			case
-				when sales.order_date BETWEEN members.join_date and dateadd(day,6,members.join_date)
-					then menu.price * 20
-				when menu.product_id = 1 then menu.price * 20
-				else menu.price * 10
-			end
-		) as total_points
+		case
+			when sales.order_date BETWEEN members.join_date and dateadd(day,6,members.join_date)
+			then menu.price * 20
+			when menu.product_id = 1 then menu.price * 20
+			when members.join_date is not null then menu.price*10
+			else 0
+		end as total_points
 	from sales 
+	-- left table --> sales, right table --> menu
 	join menu on sales.product_id = menu.product_id
-	join members on sales.customer_id = members.customer_id
-	group by sales.customer_id
+	-- left table --> sales join menu, right table --> members
+	left join members on  sales.customer_id = members.customer_id 
 )
 
-select customer_id, total_points
+select customer_id, SUM(total_points) as total_points
 from first_week_program
+group by customer_id
 
