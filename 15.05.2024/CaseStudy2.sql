@@ -47,8 +47,42 @@ SELECT
   MAX(pizza_per_order) AS pizza_count
 FROM pizza_count_cte;
 
+-- 7. For each customer, how many delivered pizzas had at least 1 change and how many had no changes?
+with delivered_pizzas_cte as(
+	select c.customer_id, 
+		case 
+			when c.exclusions <> ' ' OR c.extras <> ' ' THEN 1
+			else 0
+		end as at_least_1_change,
+		case
+			when c.exclusions = ' ' AND c.extras = ' ' THEN 1 
+			else 0
+		end as no_change
+	from customer_orders AS c
+	JOIN runner_orders AS r ON c.order_id = r.order_id
+	WHERE TRY_CAST(REPLACE(r.distance, 'km', '') AS float) != 0
+)
 
--- 7. 
+select customer_id, SUM(at_least_1_change) as at_least_1_change, SUM(no_change) as no_change
+from delivered_pizzas_cte
+group by customer_id
+
+-- 8. How many pizzas were delivered that had both exclusions and extras?
+with both_exclusions_and_extras as(
+	select 
+		case	
+			when exclusions IS NOT NULL AND extras IS NOT NULL THEN 1
+			else 0
+		end as pizza_count
+	from customer_orders as c
+	join runner_orders as r on c.order_id = r.order_id
+	WHERE TRY_CAST(REPLACE(r.distance, 'km', '') AS float) != 0
+	AND exclusions <> ' ' 
+	AND extras <> ' '
+)
+
+select SUM(pizza_count) as pizza_count_w_exclusions_extras
+from both_exclusions_and_extras
 -- B. Runner and Customer Experience
 -- 4. What was the average distance travelled for each customer?
 select customer_id, AVG(TRY_CAST(REPLACE(distance, 'km', '') AS float)) as average_distance
