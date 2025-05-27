@@ -83,6 +83,25 @@ with both_exclusions_and_extras as(
 
 select SUM(pizza_count) as pizza_count_w_exclusions_extras
 from both_exclusions_and_extras
+
+-- 9. What was the total volume of pizzas ordered for each hour of the day?
+SELECT 
+    DATEPART(HOUR, order_time) AS Hour,
+    COUNT(order_id) AS Number_of_pizzas_ordered,
+    ROUND(100.0 * COUNT(order_id) / SUM(COUNT(order_id)) OVER (), 2) AS Volume_of_pizzas_ordered
+FROM customer_orders
+GROUP BY DATEPART(HOUR, order_time)
+ORDER BY [Hour];
+
+-- 10. What was the volume of orders for each day of the week?
+SELECT 
+    DATEPART(WEEKDAY, order_time) AS [Day Of Week],
+    COUNT(order_id) AS [Number of pizzas ordered],
+    ROUND(100.0 * COUNT(order_id) / SUM(COUNT(order_id)) OVER (), 2) AS [Volume of pizzas ordered]
+FROM customer_orders
+GROUP BY DATEPART(WEEKDAY, order_time)
+ORDER BY [Number of pizzas ordered] DESC;
+
 -- B. Runner and Customer Experience
 -- 4. What was the average distance travelled for each customer?
 select customer_id, AVG(TRY_CAST(REPLACE(distance, 'km', '') AS float)) as average_distance
