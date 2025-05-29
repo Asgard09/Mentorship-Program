@@ -103,6 +103,36 @@ GROUP BY DATEPART(WEEKDAY, order_time)
 ORDER BY [Number of pizzas ordered] DESC;
 
 -- B. Runner and Customer Experience
+-- 1. How many runners signed up for each 1 week period? (i.e. week starts 2021-01-01)
+select DATEPART(WEEK, registration_date) as registartion_week,
+	COUNT(runner_id) as runner_signup
+from runners
+group by DATEPART(WEEK, registration_date)
+-- 2. What was the average time in minutes it took for each runner to arrive at the Pizza Runner HQ to pickup the order?
+SELECT 
+    r.runner_id,
+    ROUND(AVG(DATEDIFF(MINUTE, c.order_time, r.pickup_time) * 1.0), 2) AS avg_runner_pickup_time
+FROM runner_orders AS r
+INNER JOIN customer_orders AS c ON r.order_id = c.order_id
+WHERE r.cancellation IS NULL
+GROUP BY r.runner_id;
+-- 3. Is there any relationship between the number of pizzas and how long the order takes to prepare?
+WITH order_count_cte AS (
+	SELECT 
+        r.order_id,
+        COUNT(pizza_id) AS pizzas_order_count,
+        DATEDIFF(MINUTE, c.order_time, r.pickup_time) AS prep_time
+	FROM runner_orders AS r
+	JOIN customer_orders AS c ON r.order_id = c.order_id
+	WHERE r.cancellation IS NULL
+	GROUP BY r.order_id, c.order_time, r.pickup_time
+)
+SELECT 
+    pizzas_order_count,
+    ROUND(AVG(prep_time * 1.0), 2) AS avg_prep_time
+FROM order_count_cte
+GROUP BY pizzas_order_count;
+
 -- 4. What was the average distance travelled for each customer?
 select customer_id, AVG(TRY_CAST(REPLACE(distance, 'km', '') AS float)) as average_distance
 from runner_orders as r
