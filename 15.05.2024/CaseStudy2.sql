@@ -25,10 +25,21 @@ WHERE TRY_CAST(REPLACE(distance, 'km', '') AS float) is not null
 GROUP BY CAST(p.pizza_name as varchar);
 
 -- 5. How many Vegetarian and Meatlovers were ordered by each customer?
-select c.customer_id, CAST(p.pizza_name as varchar) as pizza_name, count(CAST(p.pizza_name as varchar)) as order_count
-from customer_orders as c
-join pizza_names as p on c.pizza_id = p.pizza_id
-group by c.customer_id, CAST(p.pizza_name as varchar)
+-- Turning row values into columns
+SELECT customer_id, [Vegetarian], [Meatlovers]
+FROM (
+	SELECT c.customer_id,
+		CASE 
+			WHEN pn.pizza_id = 1 THEN 'Vegetarian'
+			ELSE 'Meatlovers'
+		END AS pizza_type
+	FROM customer_orders as c 
+	JOIN pizza_names as pn ON c.pizza_id = c.pizza_id
+) AS source
+PIVOT (
+	COUNT(pizza_type)
+	FOR pizza_type IN([Vegetarian], [Meatlovers])
+) as pivot_table;
 
 -- 6. What was the maximum number of pizzas delivered in a single order?
 WITH pizza_count_cte AS
@@ -138,4 +149,29 @@ select customer_id, AVG(TRY_CAST(REPLACE(distance, 'km', '') AS float)) as avera
 from runner_orders as r
 join customer_orders as c on r.order_id = c.order_id
 group by customer_id
+
+-- 5. How many Vegetarian and Meatlovers were ordered by each customer?
+SELECT MIN(duration) as  minimum_duration,
+       MAX(duration) AS maximum_duration,
+       MAX(duration) - MIN(duration) AS maximum_difference
+FROM runner_orders;
+
+-- 6. What was the average speed for each runner for each delivery and do you notice any trend for these values?
+SELECT runner_id,
+       distance AS distance_km,
+       round(duration/60, 2) AS duration_hr,
+       round(distance*60/duration, 2) AS average_speed
+FROM runner_orders
+WHERE cancellation IS NULL
+ORDER BY runner_id;
+
+-- 7. What is the successful delivery percentage for each runner?
+SELECT runner_id,
+       COUNT(pickup_time) AS delivered_orders,
+       COUNT(*) AS total_orders,
+       ROUND(100.0 * COUNT(pickup_time) / COUNT(*), 2) AS delivery_success_percentage
+FROM runner_orders
+GROUP BY runner_id
+ORDER BY runner_id;
+
 
