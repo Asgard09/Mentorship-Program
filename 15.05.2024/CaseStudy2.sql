@@ -174,4 +174,54 @@ FROM runner_orders
 GROUP BY runner_id
 ORDER BY runner_id;
 
+-- C. Ingredient Optimisation
+-- 1. What are the standard ingredients for each pizza?
+select *
+from pizza_recipes
+
+-- 2. What was the most commonly added extra?
+WITH split_extras AS (
+	-- Removes any leading or trailing spaces from each value after splitting
+    SELECT value AS extra_topping
+    FROM customer_orders
+	--  CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row
+    CROSS APPLY STRING_SPLIT(extras, ',')
+    WHERE extras IS NOT NULL 
+      AND TRIM(extras) != 'null'
+      AND TRIM(extras) != ''
+),
+extra_count_cte AS(
+	SELECT extra_topping, COUNT(*) AS purchase_count
+	FROM split_extras 
+	GROUP BY extra_topping
+)
+
+SELECT top 1 p.topping_name, purchase_count
+FROM extra_count_cte as e
+JOIN pizza_toppings as p on e.extra_topping = p.topping_id
+ORDER BY purchase_count DESC
+
+-- 3. What was the most common exclusion?
+WITH split_exclusion AS (
+	-- Removes any leading or trailing spaces from each value after splitting
+    SELECT value AS exclusion_topping
+    FROM customer_orders
+	--  CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row
+    CROSS APPLY STRING_SPLIT(exclusions, ',')
+    WHERE exclusions IS NOT NULL 
+      AND TRIM(exclusions) != 'null'
+      AND TRIM(exclusions) != ''
+),
+exclusion_count_cte AS(
+	SELECT exclusion_topping, COUNT(*) AS purchase_count
+	FROM split_exclusion
+	GROUP BY exclusion_topping
+)
+
+SELECT top 1 p.topping_name, purchase_count
+FROM exclusion_count_cte as e
+JOIN pizza_toppings as p on e.exclusion_topping = p.topping_id
+ORDER BY purchase_count DESC
+
+-- 4. Generate an order item for each record in the customers_orders table in the format of one of the following:
 
