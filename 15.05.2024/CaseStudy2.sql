@@ -180,55 +180,7 @@ select *
 from pizza_recipes
 
 -- 2. What was the most commonly added extra?
-WITH split_extras AS (
-	-- Removes any leading or trailing spaces from each value after splitting
-    SELECT value AS extra_topping
-    FROM customer_orders
-	--  CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row
-    CROSS APPLY STRING_SPLIT(extras, ',')
-    WHERE extras IS NOT NULL 
-      AND TRIM(extras) != 'null'
-      AND TRIM(extras) != ''
-),
-extra_count_cte AS(
-	SELECT extra_topping, COUNT(*) AS purchase_count
-	FROM split_extras 
-	GROUP BY extra_topping
-)
-
-SELECT top 1 p.topping_name, purchase_count
-FROM extra_count_cte as e
-JOIN pizza_toppings as p on e.extra_topping = p.topping_id
-ORDER BY purchase_count DESC
-
--- 3. What was the most common exclusion?
-WITH split_exclusion AS (
-	-- Removes any leading or trailing spaces from each value after splitting
-    SELECT value AS exclusion_topping
-    FROM customer_orders
-	--  CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row
-    CROSS APPLY STRING_SPLIT(exclusions, ',')
-    WHERE exclusions IS NOT NULL 
-      AND TRIM(exclusions) != 'null'
-      AND TRIM(exclusions) != ''
-),
-exclusion_count_cte AS(
-	SELECT exclusion_topping, COUNT(*) AS purchase_count
-	FROM split_exclusion
-	GROUP BY exclusion_topping
-)
-
-SELECT top 1 p.topping_name, purchase_count
-FROM exclusion_count_cte as e
-JOIN pizza_toppings as p on e.exclusion_topping = p.topping_id
-ORDER BY purchase_count DESC
-
--- 4. Generate an order item for each record in the customers_orders table in the format of one of the following:
--- Meat Lovers
--- Meat Lovers - Exclude Beef
--- Meat Lovers - Extra Bacon
--- Meat Lovers - Exclude Cheese, Bacon - Extra Mushroom, Peppers
-WITH pizza_details AS (
+CREATE VIEW pizza_details AS (
     SELECT 
         co.order_id,
         co.customer_id,
@@ -238,23 +190,9 @@ WITH pizza_details AS (
         co.extras
     FROM customer_orders co
     JOIN pizza_names pn ON co.pizza_id = pn.pizza_id
-),
-exclusions_list AS (
-    SELECT 
-        pd.order_id,
-        pd.customer_id,
-        pd.pizza_id,
-        pd.pizza_name,
-        pd.extras,
-        STRING_AGG(CAST(pt.topping_name AS NVARCHAR(MAX)), ', ') AS excluded_toppings
-    FROM pizza_details pd
-    CROSS APPLY STRING_SPLIT(pd.exclusions, ',') s
-    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
-    WHERE pd.exclusions IS NOT NULL 
-      AND TRIM(pd.exclusions) NOT IN ('', 'null')
-    GROUP BY pd.order_id, pd.customer_id, pd.pizza_id, pd.pizza_name, pd.extras
-),
-extras_list AS (
+)
+
+CREATE VIEW extras_list AS (
     SELECT 
         pd.order_id,
         pd.customer_id,
@@ -269,6 +207,42 @@ extras_list AS (
       AND TRIM(pd.extras) NOT IN ('', 'null')
     GROUP BY pd.order_id, pd.customer_id, pd.pizza_id, pd.pizza_name, pd.exclusions
 )
+
+SELECT TOP 1 COUNT(*) as purchase_count, TRIM(s.value) AS extra_toppings
+FROM extras_list
+-- CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row --> separate 1 row become many rows
+CROSS APPLY STRING_SPLIT(extra_toppings, ',') as s
+GROUP BY TRIM(s.value)
+
+-- 3. What was the most common exclusion?
+CREATE VIEW exclusions_list AS (
+    SELECT 
+        pd.order_id,
+        pd.customer_id,
+        pd.pizza_id,
+        pd.pizza_name,
+        pd.extras,
+        STRING_AGG(CAST(pt.topping_name AS NVARCHAR(MAX)), ', ') AS excluded_toppings
+    FROM pizza_details pd
+	--  CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row
+    CROSS APPLY STRING_SPLIT(pd.exclusions, ',') s
+    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+    WHERE pd.exclusions IS NOT NULL 
+      AND TRIM(pd.exclusions) NOT IN ('', 'null')
+    GROUP BY pd.order_id, pd.customer_id, pd.pizza_id, pd.pizza_name, pd.extras
+)
+
+SELECT TOP 1 COUNT(*) AS purchase_count, TRIM(s.value) AS excluded_topping
+FROM exclusions_list AS e
+CROSS APPLY string_split(e.excluded_toppings, ',') AS s
+GROUP BY TRIM(s.value)
+ORDER BY purchase_count DESC;
+
+-- 4. Generate an order item for each record in the customers_orders table in the format of one of the following:
+-- Meat Lovers
+-- Meat Lovers - Exclude Beef
+-- Meat Lovers - Extra Bacon
+-- Meat Lovers - Exclude Cheese, Bacon - Extra Mushroom, Peppers
 SELECT 
     pd.order_id,
     pd.customer_id,
