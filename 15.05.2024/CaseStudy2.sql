@@ -224,4 +224,66 @@ JOIN pizza_toppings as p on e.exclusion_topping = p.topping_id
 ORDER BY purchase_count DESC
 
 -- 4. Generate an order item for each record in the customers_orders table in the format of one of the following:
-
+-- Meat Lovers
+-- Meat Lovers - Exclude Beef
+-- Meat Lovers - Extra Bacon
+-- Meat Lovers - Exclude Cheese, Bacon - Extra Mushroom, Peppers
+WITH pizza_details AS (
+    SELECT 
+        co.order_id,
+        co.customer_id,
+        co.pizza_id,
+        CAST(pn.pizza_name AS NVARCHAR(MAX)) AS pizza_name,
+        co.exclusions,
+        co.extras
+    FROM customer_orders co
+    JOIN pizza_names pn ON co.pizza_id = pn.pizza_id
+),
+exclusions_list AS (
+    SELECT 
+        pd.order_id,
+        pd.customer_id,
+        pd.pizza_id,
+        pd.pizza_name,
+        pd.extras,
+        STRING_AGG(CAST(pt.topping_name AS NVARCHAR(MAX)), ', ') AS excluded_toppings
+    FROM pizza_details pd
+    CROSS APPLY STRING_SPLIT(pd.exclusions, ',') s
+    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+    WHERE pd.exclusions IS NOT NULL 
+      AND TRIM(pd.exclusions) NOT IN ('', 'null')
+    GROUP BY pd.order_id, pd.customer_id, pd.pizza_id, pd.pizza_name, pd.extras
+),
+extras_list AS (
+    SELECT 
+        pd.order_id,
+        pd.customer_id,
+        pd.pizza_id,
+        pd.pizza_name,
+        pd.exclusions,
+        STRING_AGG(CAST(pt.topping_name AS NVARCHAR(MAX)), ', ') AS extra_toppings
+    FROM pizza_details pd
+    CROSS APPLY STRING_SPLIT(pd.extras, ',') s
+    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+    WHERE pd.extras IS NOT NULL 
+      AND TRIM(pd.extras) NOT IN ('', 'null')
+    GROUP BY pd.order_id, pd.customer_id, pd.pizza_id, pd.pizza_name, pd.exclusions
+)
+SELECT 
+    pd.order_id,
+    pd.customer_id,
+    CASE 
+        WHEN el.excluded_toppings IS NULL AND xl.extra_toppings IS NULL 
+            THEN pd.pizza_name
+        WHEN el.excluded_toppings IS NULL 
+            THEN CAST(pd.pizza_name AS NVARCHAR(MAX)) + N' - Extra ' + CAST(xl.extra_toppings AS NVARCHAR(MAX))
+        WHEN xl.extra_toppings IS NULL 
+            THEN CAST(pd.pizza_name AS NVARCHAR(MAX)) + N' - Exclude ' + CAST(el.excluded_toppings AS NVARCHAR(MAX))
+        ELSE CAST(pd.pizza_name AS NVARCHAR(MAX)) + N' - Exclude ' + CAST(el.excluded_toppings AS NVARCHAR(MAX)) + N' - Extra ' + CAST(xl.extra_toppings AS NVARCHAR(MAX))
+    END AS order_item
+FROM pizza_details pd
+LEFT JOIN exclusions_list el 
+    ON pd.order_id = el.order_id AND pd.pizza_id = el.pizza_id
+LEFT JOIN extras_list xl 
+    ON pd.order_id = xl.order_id AND pd.pizza_id = xl.pizza_id
+ORDER BY pd.order_id;
