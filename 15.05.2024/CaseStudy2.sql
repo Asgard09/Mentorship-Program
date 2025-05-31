@@ -261,3 +261,65 @@ LEFT JOIN exclusions_list el
 LEFT JOIN extras_list xl 
     ON pd.order_id = xl.order_id AND pd.pizza_id = xl.pizza_id
 ORDER BY pd.order_id;
+
+-- D. Pricing and Ratings
+-- 1. If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes 
+-- how much money has Pizza Runner made so far if there are no delivery fees?
+-- Calculate total revenue (Meat Lovers $12, Vegetarian $10)
+WITH pizza_prices AS (
+    SELECT 1 AS pizza_id, 10 AS price -- Vegetarian pizza price
+    UNION ALL
+    SELECT 2 AS pizza_id, 12 AS price -- Meat Lovers pizza price
+),
+successful_orders AS (
+    SELECT 
+        c.order_id,
+        c.pizza_id,
+        COUNT(*) AS pizza_count
+    FROM customer_orders c
+    JOIN runner_orders r ON c.order_id = r.order_id
+    WHERE r.cancellation IS NULL OR r.cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+    GROUP BY c.order_id, c.pizza_id
+)
+
+SELECT 
+    SUM(so.pizza_count * pp.price) AS total_revenue
+FROM successful_orders so
+JOIN pizza_prices pp ON so.pizza_id = pp.pizza_id;
+
+-- 2. What if there was an additional $1 charge for any pizza extras and cheese costs $1 extra?
+WITH pizza_prices AS (
+    SELECT 1 AS pizza_id, 10 AS price -- Vegetarian pizza price
+    UNION ALL
+    SELECT 2 AS pizza_id, 12 AS price -- Meat Lovers pizza price
+),
+order_extras_charges AS (
+    SELECT 
+        c.order_id,
+        c.pizza_id,
+        -- Base price for the pizza
+        pp.price AS base_price,
+        -- Count number of extras for each pizza
+        CASE 
+            WHEN c.extras IS NULL OR TRIM(c.extras) IN ('', 'null') THEN 0
+            ELSE LEN(c.extras) - LEN(REPLACE(c.extras, ',', '')) + 1
+        END AS extras_count,
+        -- Check if cheese (topping_id=4) is added as extra
+        CASE 
+            WHEN c.extras IS NULL OR TRIM(c.extras) IN ('', 'null') THEN 0
+            WHEN c.extras LIKE '%4%' THEN 1
+            ELSE 0
+        END AS has_extra_cheese
+    FROM customer_orders c
+    JOIN runner_orders r ON c.order_id = r.order_id
+    JOIN pizza_prices pp ON c.pizza_id = pp.pizza_id
+    WHERE r.cancellation IS NULL OR r.cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+)
+
+SELECT 
+    SUM(
+        base_price + 
+        extras_count + -- $1 per extra topping
+        has_extra_cheese -- Additional $1 if cheese is added
+    ) AS total_revenue_with_extras
+FROM order_extras_charges;
