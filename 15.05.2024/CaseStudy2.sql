@@ -211,6 +211,7 @@ CREATE VIEW extras_list AS (
 SELECT TOP 1 COUNT(*) as purchase_count, TRIM(s.value) AS extra_toppings
 FROM extras_list
 -- CROSS APPLY STRING_SPLIT(extras, ',') applies the STRING_SPLIT function to each row --> separate 1 row become many rows
+-- TRIM --> DELETE SPACE AROUND Ex: ' jj' --> 'jj'
 CROSS APPLY STRING_SPLIT(extra_toppings, ',') as s
 GROUP BY TRIM(s.value)
 
@@ -262,6 +263,151 @@ LEFT JOIN extras_list xl
     ON pd.order_id = xl.order_id AND pd.pizza_id = xl.pizza_id
 ORDER BY pd.order_id;
 
+-- 5. Generate an alphabetically ordered comma separated ingredient list for each pizza order from the customer_orders table 
+-- and add a 2x in front of any relevant ingredients
+WITH pizza_base_ingredients AS (
+    -- Get base ingredients for each pizza type
+    SELECT pn.pizza_id, pn.pizza_name, pt.topping_id,
+        CAST(pt.topping_name AS NVARCHAR(MAX)) AS topping_name
+    FROM pizza_names pn
+    JOIN pizza_recipes pr ON pn.pizza_id = pr.pizza_id
+    CROSS APPLY STRING_SPLIT(CAST(pr.toppings AS NVARCHAR(MAX)), ',') s
+    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+),
+pizza_order_ingredients AS (
+    -- Combine base ingredients with extras and exclusions
+    SELECT 
+        pd.order_id, pd.customer_id, pd.pizza_id,
+        pd.pizza_name, pbi.topping_name,
+        -- Check if ingredient is excluded
+        CASE 
+            WHEN el.excluded_toppings IS NOT NULL AND 
+                 el.excluded_toppings LIKE '%' + pbi.topping_name + '%' 
+            THEN 1 
+            ELSE 0 
+        END AS is_excluded,
+        -- Check if ingredient is also added as extra
+        CASE 
+            WHEN xl.extra_toppings IS NOT NULL AND 
+                 xl.extra_toppings LIKE '%' + pbi.topping_name + '%' 
+            THEN 1 
+            ELSE 0 
+        END AS is_extra
+    FROM pizza_details pd
+    JOIN pizza_base_ingredients pbi ON pd.pizza_id = pbi.pizza_id
+    LEFT JOIN exclusions_list el ON pd.order_id = el.order_id AND pd.pizza_id = el.pizza_id
+    LEFT JOIN extras_list xl ON pd.order_id = xl.order_id AND pd.pizza_id = xl.pizza_id
+    
+    UNION ALL
+    
+    -- Add extra toppings that aren't in the base recipe
+    SELECT 
+        pd.order_id,
+        pd.customer_id,
+        pd.pizza_id,
+        pd.pizza_name,
+        TRIM(s.value) AS topping_name,
+        0 AS is_excluded,
+        1 AS is_extra
+    FROM pizza_details pd
+    JOIN extras_list xl ON pd.order_id = xl.order_id AND pd.pizza_id = xl.pizza_id
+    CROSS APPLY STRING_SPLIT(xl.extra_toppings, ',') s
+    LEFT JOIN pizza_base_ingredients pbi 
+        ON pd.pizza_id = pbi.pizza_id 
+        AND TRIM(s.value) = pbi.topping_name
+    WHERE pbi.topping_name IS NULL -- Only include extras not in base recipe
+),
+ingredients_with_counts AS (
+    -- Count occurrences of each ingredient in each order
+    SELECT 
+        order_id,
+        pizza_id,
+        pizza_name,
+        topping_name,
+        SUM(CASE WHEN is_excluded = 0 THEN 1 ELSE 0 END) AS ingredient_count
+    FROM pizza_order_ingredients
+    GROUP BY order_id, pizza_id, pizza_name, topping_name
+)
+
+SELECT 
+    iwc.order_id,
+    iwc.pizza_name + ': ' + 
+    STRING_AGG(
+        CASE 
+            WHEN ingredient_count > 1 THEN '2x' + iwc.topping_name
+            ELSE iwc.topping_name
+        END, 
+        ', '
+    ) WITHIN GROUP (ORDER BY iwc.topping_name) AS ingredient_list
+FROM ingredients_with_counts iwc
+WHERE ingredient_count > 0 -- Only include ingredients that weren't excluded
+GROUP BY iwc.order_id, iwc.pizza_id, iwc.pizza_name
+ORDER BY iwc.order_id, iwc.pizza_id;
+
+-- 6. What is the total quantity of each ingredient used in all delivered pizzas sorted by most frequent first?
+WITH delivered_pizzas AS (
+    -- Get only pizzas that were successfully delivered
+    SELECT 
+        c.order_id,
+        c.pizza_id,
+        CAST(c.exclusions AS NVARCHAR(MAX)) AS exclusions,
+        CAST(c.extras AS NVARCHAR(MAX)) AS extras
+    FROM customer_orders c
+    JOIN runner_orders r ON c.order_id = r.order_id
+    WHERE r.pickup_time IS NOT NULL 
+      AND (r.cancellation IS NULL OR r.cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation'))
+),
+pizza_ingredients AS (
+    -- Get base ingredients for each pizza
+    SELECT 
+        dp.order_id,
+        dp.pizza_id,
+        pt.topping_id,
+        CAST(pt.topping_name AS NVARCHAR(MAX)) AS topping_name,
+        -- Count as 0 if excluded, 1 if not excluded
+        CASE 
+            WHEN dp.exclusions IS NOT NULL 
+                AND dp.exclusions <> ' '
+                AND dp.exclusions <> 'null'
+                AND EXISTS (
+                    SELECT 1 
+                    FROM STRING_SPLIT(dp.exclusions, ',') s 
+                    WHERE TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+                ) 
+            THEN 0 
+            ELSE 1 
+        END AS is_included
+    FROM delivered_pizzas dp
+    JOIN pizza_names pn ON dp.pizza_id = pn.pizza_id
+    JOIN pizza_recipes pr ON pn.pizza_id = pr.pizza_id
+    CROSS APPLY STRING_SPLIT(CAST(pr.toppings AS NVARCHAR(MAX)), ',') s
+    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+    
+    UNION ALL
+    
+    -- Add extra toppings
+    SELECT 
+        dp.order_id,
+        dp.pizza_id,
+        pt.topping_id,
+        CAST(pt.topping_name AS NVARCHAR(MAX)) AS topping_name,
+        1 AS is_included -- Extras are always included
+    FROM delivered_pizzas dp
+    CROSS APPLY STRING_SPLIT(dp.extras, ',') s
+    JOIN pizza_toppings pt ON TRIM(s.value) = CAST(pt.topping_id AS VARCHAR(10))
+    WHERE dp.extras IS NOT NULL 
+      AND dp.extras <> ' '
+      AND dp.extras <> 'null'
+      AND TRIM(s.value) <> ''
+)
+
+-- Sum up the total quantities of each ingredient
+SELECT 
+    topping_name AS ingredient,
+    SUM(is_included) AS total_quantity
+FROM pizza_ingredients
+GROUP BY topping_name
+ORDER BY total_quantity DESC;
 -- D. Pricing and Ratings
 -- 1. If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes 
 -- how much money has Pizza Runner made so far if there are no delivery fees?
