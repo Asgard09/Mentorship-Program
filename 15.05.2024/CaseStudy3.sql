@@ -104,3 +104,29 @@ SELECT
 FROM next_dates
 WHERE next_date IS NULL
 GROUP BY plan_id;
+
+-- 8. How many customers have upgraded to an annual plan in 2020?
+SELECT COUNT(DISTINCT customer_id) AS num_of_customers
+FROM subscriptions
+WHERE plan_id = 3
+  AND start_date <= '2020-12-31';
+
+-- 9. How many days on average does it take for a customer to upgrade to an annual plan from the day they join Foodie-Fi?
+WITH trial_plan AS (
+  SELECT 
+    customer_id, 
+    start_date AS trial_date
+  FROM subscriptions
+  WHERE plan_id = 0
+), annual_plan AS (
+  SELECT 
+    customer_id, 
+    start_date AS annual_date
+  FROM subscriptions
+  WHERE plan_id = 3
+)
+SELECT 
+  ROUND(AVG(CAST(DATEDIFF(day, trial.trial_date, annual.annual_date) AS FLOAT)), 0) AS avg_days_to_upgrade
+FROM trial_plan AS trial
+JOIN annual_plan AS annual
+  ON trial.customer_id = annual.customer_id;
